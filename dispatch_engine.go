@@ -11,14 +11,14 @@ const (
 )
 
 type (
-	IAttemperhEngineEvent interface {
-		//ws事件
-		OnWSocketConnEvent(sid int64, remote string)
-		OnWSocketRecvEvent(sid int64, message []byte)
-		OnWSocketCloseEvent(sid int64)
-		//定时器事件
-		OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{})
-	}
+	// IAttemperhEngineEvent interface {
+	// 	//ws事件
+	// 	OnWSocketConnEvent(sid int64, remote string)
+	// 	OnWSocketRecvEvent(sid int64, message []byte)
+	// 	OnWSocketCloseEvent(sid int64)
+	// 	//定时器事件
+	// 	OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{})
+	// }
 	//websocket事件上下文
 	wsContext struct {
 		sid     int64
@@ -42,21 +42,19 @@ type (
 	AttemperhEngine struct {
 		timerEngine *TimerEngine
 		wsEngine    *WebSocketEngine
-		iEvent      IAttemperhEngineEvent
 		ch          chan AttemperhEngineContext
 		stop        chan struct{}
 		release     chan struct{}
 	}
 )
 
-func New(wsaddr string, i IAttemperhEngineEvent, cache int) (engine *AttemperhEngine) {
+func NewAttemperhEngine(wsaddr string, asynCtxCount int) (engine *AttemperhEngine) {
 	engine = &AttemperhEngine{
-		iEvent: i,
-		ch:     make(chan AttemperhEngineContext, cache),
-		stop:   make(chan struct{}),
+		ch:   make(chan AttemperhEngineContext, asynCtxCount),
+		stop: make(chan struct{}),
 	}
-	engine.wsEngine = NewWebSocketEngine(wsaddr, engine, cache)
-	engine.timerEngine = NewTimerEngine(engine, cache)
+	engine.wsEngine = NewWebSocketEngine(wsaddr, engine, asynCtxCount)
+	engine.timerEngine = NewTimerEngine(engine, asynCtxCount)
 	return
 }
 
@@ -137,13 +135,13 @@ LOOP:
 		case ctx := <-engine.ch:
 			switch ctx.OptType {
 			case ENGINE_NET_WS_CONN:
-				engine.iEvent.OnWSocketConnEvent(ctx.wsctx.sid, ctx.wsctx.remote)
+				engine.OnWSocketConnEvent(ctx.wsctx.sid, ctx.wsctx.remote)
 			case ENGINE_NET_WS_RECV:
-				engine.iEvent.OnWSocketRecvEvent(ctx.wsctx.sid, ctx.wsctx.message)
+				engine.OnWSocketRecvEvent(ctx.wsctx.sid, ctx.wsctx.message)
 			case ENGINE_NET_WS_CLOSE:
-				engine.iEvent.OnWSocketCloseEvent(ctx.wsctx.sid)
+				engine.OnWSocketCloseEvent(ctx.wsctx.sid)
 			case ENGINE_TIMER:
-				engine.iEvent.OnTimerEvent(ctx.timerctx.id1, ctx.timerctx.id2, ctx.timerctx.id3, ctx.timerctx.id4, ctx.timerctx.id5, ctx.timerctx.para1, ctx.timerctx.para2)
+				engine.OnTimerEvent(ctx.timerctx.id1, ctx.timerctx.id2, ctx.timerctx.id3, ctx.timerctx.id4, ctx.timerctx.id5, ctx.timerctx.para1, ctx.timerctx.para2)
 			}
 		case <-engine.stop:
 			break LOOP
@@ -151,3 +149,11 @@ LOOP:
 	}
 	engine.release <- struct{}{}
 }
+
+// ws事件
+func (engine *AttemperhEngine) OnWSocketConnEvent(sid int64, remote string)  {}
+func (engine *AttemperhEngine) OnWSocketRecvEvent(sid int64, message []byte) {}
+func (engine *AttemperhEngine) OnWSocketCloseEvent(sid int64)                {}
+
+// 定时器事件
+func (engine *AttemperhEngine) OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{}) {}
