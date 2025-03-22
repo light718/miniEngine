@@ -1,4 +1,4 @@
-package engine
+package miniEngine
 
 import (
 	"container/heap"
@@ -13,38 +13,38 @@ const (
 	TIMER_ENGINE_EVENT_FIX
 )
 
-type TimerEngineContext struct {
-	//事件类型
-	evType int
-	//定时器类型ID
-	id1 int
-	id2 int
-	id3 int
-	id4 int
-	id5 int
-	//过期时间
-	expire time.Duration
-	//附带参数
-	para1 interface{}
-	para2 interface{}
-}
-
-type TimerItem struct {
-	deadline time.Time //过期
-	index    int
-	id1      int
-	id2      int
-	id3      int
-	id4      int
-	id5      int
-	para1    interface{}
-	para2    interface{}
-}
-
-type TimerItems []TimerItem
-type TimerHeap struct {
-	items TimerItems
-}
+type (
+	TimerEngineContext struct {
+		//事件类型
+		evType int
+		//定时器类型ID
+		id1 int
+		id2 int
+		id3 int
+		id4 int
+		id5 int
+		//过期时间
+		expire time.Duration
+		//附带参数
+		para1 interface{}
+		para2 interface{}
+	}
+	TimerItem struct {
+		deadline time.Time //过期
+		index    int
+		id1      int
+		id2      int
+		id3      int
+		id4      int
+		id5      int
+		para1    interface{}
+		para2    interface{}
+	}
+	TimerItems []TimerItem
+	TimerHeap  struct {
+		items TimerItems
+	}
+)
 
 func NewTimerHeap() (h *TimerHeap) {
 	h = &TimerHeap{
@@ -115,31 +115,31 @@ func (h *TimerHeap) Fix(id1, id2, id3, id4, id5 int, expire time.Duration) {
 
 // 定时器引擎
 type TimerEngine struct {
-	timerHeap *TimerHeap
-	dispatch  *DispatchEngine
-	ch        chan TimerEngineContext
-	stop      chan struct{}
-	release   chan struct{}
+	timerHeap       *TimerHeap
+	iAttemperEngine *AttemperhEngine
+	ch              chan TimerEngineContext
+	breakloop       chan struct{}
+	release         chan struct{}
 }
 
-func NewTimerEngine(d *DispatchEngine, cache int) (engine *TimerEngine) {
+func NewTimerEngine(p *AttemperhEngine, cache int) (engine *TimerEngine) {
 	engine = &TimerEngine{
-		dispatch:  d,
-		timerHeap: NewTimerHeap(),
-		ch:        make(chan TimerEngineContext, cache),
-		stop:      make(chan struct{}),
-		release:   make(chan struct{}),
+		iAttemperEngine: p,
+		timerHeap:       NewTimerHeap(),
+		ch:              make(chan TimerEngineContext, cache),
+		breakloop:       make(chan struct{}),
+		release:         make(chan struct{}),
 	}
 
 	return
 }
 
-func (engine *TimerEngine) Start() {
-	go engine.Dispatch()
+func (engine *TimerEngine) start() {
+	go engine.dispatch()
 }
 
-func (engine *TimerEngine) Stop() {
-	engine.stop <- struct{}{}
+func (engine *TimerEngine) stop() {
+	engine.breakloop <- struct{}{}
 	<-engine.release
 }
 
@@ -180,10 +180,10 @@ func (engine *TimerEngine) Fix(id1, id2, id3, id4, id5 int, expire time.Duration
 	}
 }
 
-func (engine *TimerEngine) Dispatch() {
+func (engine *TimerEngine) dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("TimerEngine error:%v", err)
+			log.Fatalf("TimerEngine error:%v", err)
 		}
 	}()
 	timer := time.NewTimer(time.Millisecond)
@@ -227,7 +227,7 @@ LOOP:
 				for engine.timerHeap.Len() > 0 {
 					item := &engine.timerHeap.items[0]
 					if item.deadline.Before(now) {
-						engine.dispatch.OnTimerEvent(item.id1, item.id2, item.id3, item.id4, item.id5, item.para1, item.para2)
+						engine.iAttemperEngine.doTimer(item.id1, item.id2, item.id3, item.id4, item.id5, item.para1, item.para2)
 						heap.Pop(engine.timerHeap)
 					} else {
 						break
@@ -238,7 +238,7 @@ LOOP:
 					timer.Reset(deadline.Sub(now))
 				}
 			}
-		case <-engine.stop:
+		case <-engine.breakloop:
 			{
 				if !timer.Stop() {
 					select {

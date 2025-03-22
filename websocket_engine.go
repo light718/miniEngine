@@ -1,4 +1,4 @@
-package engine
+package miniEngine
 
 import (
 	"log"
@@ -68,36 +68,36 @@ func (c *wsConnection) writeMessage(content []byte) {
 		return
 	}
 	if err := c.conn.WriteMessage(websocket.TextMessage, content); err != nil {
-		log.Printf("write message painc error:%v", err)
+		log.Panicf("write message painc error:%v", err)
 		return
 	}
 }
 
 type WebSocketEngine struct {
-	httpsrv    *http.Server
-	upgrader   websocket.Upgrader //升级处理
-	dispatch   *DispatchEngine    //接口服务
-	identity   int64              //ID
-	message    chan Message
-	register   chan *wsConnection
-	unregister chan int64
-	pool       sync.Pool
-	clients    map[int64]*wsConnection
-	stop       chan struct{}
-	release    chan struct{}
+	httpsrv         *http.Server
+	upgrader        websocket.Upgrader //升级处理
+	iAttemperEngine *AttemperhEngine   //接口服务
+	identity        int64              //ID
+	message         chan Message
+	register        chan *wsConnection
+	unregister      chan int64
+	pool            sync.Pool
+	clients         map[int64]*wsConnection
+	breakloop       chan struct{}
+	release         chan struct{}
 }
 
-func NewWebSocketEngine(addr string, dispatch *DispatchEngine, cache int) (engine *WebSocketEngine) {
+func NewWebSocketEngine(addr string, p *AttemperhEngine, cache int) (engine *WebSocketEngine) {
 	engine = &WebSocketEngine{
-		httpsrv:    &http.Server{Addr: addr, Handler: nil},
-		dispatch:   dispatch,
-		identity:   INVALID_SID,
-		clients:    make(map[int64]*wsConnection),
-		message:    make(chan Message, cache),
-		register:   make(chan *wsConnection, 1024),
-		unregister: make(chan int64, 1024),
-		stop:       make(chan struct{}),
-		release:    make(chan struct{}),
+		httpsrv:         &http.Server{Addr: addr, Handler: nil},
+		iAttemperEngine: p,
+		identity:        INVALID_SID,
+		clients:         make(map[int64]*wsConnection),
+		message:         make(chan Message, cache),
+		register:        make(chan *wsConnection, 1024),
+		unregister:      make(chan int64, 1024),
+		breakloop:       make(chan struct{}),
+		release:         make(chan struct{}),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -114,7 +114,7 @@ func NewWebSocketEngine(addr string, dispatch *DispatchEngine, cache int) (engin
 func (engine *WebSocketEngine) Dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Panicf("WebSocketEngine Dispatch error:%v", err)
+			log.Fatalf("WebSocketEngine Dispatch error:%v", err)
 		}
 	}()
 LOOP:
@@ -131,7 +131,7 @@ LOOP:
 			if conn, ok := engine.clients[msg.Sid]; ok {
 				conn.send <- msg.Content
 			}
-		case <-engine.stop:
+		case <-engine.breakloop:
 			engine.httpsrv.Close()
 			for _, v := range engine.clients {
 				v.Close(&engine.pool)
@@ -142,15 +142,15 @@ LOOP:
 	engine.release <- struct{}{}
 }
 
-func (engine *WebSocketEngine) Start() {
+func (engine *WebSocketEngine) start() {
 	//启动http服务
 	go engine.httpsrv.ListenAndServe()
 	go engine.Dispatch()
 }
 
 // 停止
-func (engine *WebSocketEngine) Stop() {
-	engine.stop <- struct{}{}
+func (engine *WebSocketEngine) stop() {
+	engine.breakloop <- struct{}{}
 	<-engine.release
 }
 
@@ -166,9 +166,9 @@ func (engine *WebSocketEngine) Handler(w http.ResponseWriter, r *http.Request) {
 	connection.conn = c
 	go connection.run()
 	engine.register <- connection
-	engine.dispatch.OnWebSocketConnEvent(connection.sid, r.RemoteAddr)
+	engine.iAttemperEngine.doWebSocketConn(connection.sid, r.RemoteAddr)
 	engine.handleReads(connection)
-	engine.dispatch.OnWebSocketCloseEvent(connection.sid)
+	engine.iAttemperEngine.doWebSocketClose(connection.sid)
 	engine.unregister <- connection.sid
 }
 
@@ -179,7 +179,7 @@ func (engine *WebSocketEngine) handleReads(connection *wsConnection) {
 			break
 		}
 		if messageType == websocket.TextMessage {
-			engine.dispatch.OnWebSocketRecvEvent(connection.sid, message)
+			engine.iAttemperEngine.doWebSocketRecv(connection.sid, message)
 		}
 	}
 }

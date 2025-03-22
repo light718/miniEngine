@@ -1,15 +1,6 @@
-package engine
+package miniEngine
 
 import "log"
-
-type IDispatchEngineEvent interface {
-	//ws事件
-	OnWSocketConnEvent(sid int64, remote string)
-	OnWSocketRecvEvent(sid int64, message []byte)
-	OnWSocketCloseEvent(sid int64)
-	//定时器事件
-	OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{})
-}
 
 // 服务上下文类型
 const (
@@ -19,62 +10,71 @@ const (
 	ENGINE_TIMER
 )
 
-type wsContext struct {
-	sid     int64
-	remote  string
-	message []byte
-}
+type (
+	IAttemperhEngineEvent interface {
+		//ws事件
+		OnWSocketConnEvent(sid int64, remote string)
+		OnWSocketRecvEvent(sid int64, message []byte)
+		OnWSocketCloseEvent(sid int64)
+		//定时器事件
+		OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{})
+	}
+	//websocket事件上下文
+	wsContext struct {
+		sid     int64
+		remote  string
+		message []byte
+	}
+	//定时器事件上下文
+	timerContext struct {
+		id1, id2, id3, id4, id5 int
+		para1, para2            interface{}
+	}
+	AttemperhEngineContext struct {
+		//服务上下文类型
+		OptType int
+		//ws事件
+		wsctx wsContext
+		//定时器事件
+		timerctx timerContext
+	}
 
-type timerContext struct {
-	id1, id2, id3, id4, id5 int
-	para1, para2            interface{}
-}
+	AttemperhEngine struct {
+		timerEngine *TimerEngine
+		wsEngine    *WebSocketEngine
+		iEvent      IAttemperhEngineEvent
+		ch          chan AttemperhEngineContext
+		stop        chan struct{}
+		release     chan struct{}
+	}
+)
 
-// 上下文
-type ServiceEngineContext struct {
-	//服务上下文类型
-	OptType int
-	//ws事件
-	wsctx wsContext
-	//定时器事件
-	timerctx timerContext
-}
-
-type DispatchEngine struct {
-	wsEngine    *WebSocketEngine
-	timerEngine *TimerEngine
-	iDispatch   IDispatchEngineEvent
-	ch          chan ServiceEngineContext
-	stop        chan struct{}
-	release     chan struct{}
-}
-
-func New(wsaddr string, i IDispatchEngineEvent, cache int) (engine *DispatchEngine) {
-	engine = &DispatchEngine{
-		iDispatch: i,
-		ch:        make(chan ServiceEngineContext, cache),
-		stop:      make(chan struct{}),
+func New(wsaddr string, i IAttemperhEngineEvent, cache int) (engine *AttemperhEngine) {
+	engine = &AttemperhEngine{
+		iEvent: i,
+		ch:     make(chan AttemperhEngineContext, cache),
+		stop:   make(chan struct{}),
 	}
 	engine.wsEngine = NewWebSocketEngine(wsaddr, engine, cache)
 	engine.timerEngine = NewTimerEngine(engine, cache)
 	return
 }
 
-func (engine *DispatchEngine) Start() {
-	engine.timerEngine.Start()
-	engine.wsEngine.Start()
-	go engine.Dispatch()
+func (engine *AttemperhEngine) Start() {
+	engine.timerEngine.start()
+	engine.wsEngine.start()
+	go engine.dispatch()
 }
 
-func (engine *DispatchEngine) Stop() {
-	engine.wsEngine.Stop()
-	engine.timerEngine.Stop()
+func (engine *AttemperhEngine) Stop() {
+	engine.wsEngine.stop()
+	engine.timerEngine.stop()
 	engine.stop <- struct{}{}
 	<-engine.release
 }
 
-func (engine *DispatchEngine) OnWebSocketConnEvent(sid int64, remote string) {
-	engine.ch <- ServiceEngineContext{
+func (engine *AttemperhEngine) doWebSocketConn(sid int64, remote string) {
+	engine.ch <- AttemperhEngineContext{
 		OptType: ENGINE_NET_WS_CONN,
 		wsctx: wsContext{
 			sid:    sid,
@@ -83,8 +83,8 @@ func (engine *DispatchEngine) OnWebSocketConnEvent(sid int64, remote string) {
 	}
 }
 
-func (engine *DispatchEngine) OnWebSocketRecvEvent(sid int64, message []byte) {
-	engine.ch <- ServiceEngineContext{
+func (engine *AttemperhEngine) doWebSocketRecv(sid int64, message []byte) {
+	engine.ch <- AttemperhEngineContext{
 		OptType: ENGINE_NET_WS_RECV,
 		wsctx: wsContext{
 			sid:     sid,
@@ -93,8 +93,8 @@ func (engine *DispatchEngine) OnWebSocketRecvEvent(sid int64, message []byte) {
 	}
 }
 
-func (engine *DispatchEngine) OnWebSocketCloseEvent(sid int64) {
-	engine.ch <- ServiceEngineContext{
+func (engine *AttemperhEngine) doWebSocketClose(sid int64) {
+	engine.ch <- AttemperhEngineContext{
 		OptType: ENGINE_NET_WS_CLOSE,
 		wsctx: wsContext{
 			sid: sid,
@@ -102,8 +102,8 @@ func (engine *DispatchEngine) OnWebSocketCloseEvent(sid int64) {
 	}
 }
 
-func (engine *DispatchEngine) OnTimerEvent(id1, id2, id3, id4, id5 int, para1, para2 interface{}) {
-	engine.ch <- ServiceEngineContext{
+func (engine *AttemperhEngine) doTimer(id1, id2, id3, id4, id5 int, para1, para2 interface{}) {
+	engine.ch <- AttemperhEngineContext{
 		OptType: ENGINE_TIMER,
 		timerctx: timerContext{
 			id1:   id1,
@@ -117,18 +117,18 @@ func (engine *DispatchEngine) OnTimerEvent(id1, id2, id3, id4, id5 int, para1, p
 	}
 }
 
-func (engine *DispatchEngine) TimerEngine() *TimerEngine {
+func (engine *AttemperhEngine) TimerEngine() *TimerEngine {
 	return engine.timerEngine
 }
 
-func (engine *DispatchEngine) WebSocketEngine() *WebSocketEngine {
+func (engine *AttemperhEngine) WebSocketEngine() *WebSocketEngine {
 	return engine.wsEngine
 }
 
-func (engine *DispatchEngine) Dispatch() {
+func (engine *AttemperhEngine) dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Panicf("DispatchEngine Dispatch error:%v", err)
+			log.Fatalf("DispatchEngine Dispatch error:%v", err)
 		}
 	}()
 LOOP:
@@ -137,13 +137,13 @@ LOOP:
 		case ctx := <-engine.ch:
 			switch ctx.OptType {
 			case ENGINE_NET_WS_CONN:
-				engine.iDispatch.OnWSocketConnEvent(ctx.wsctx.sid, ctx.wsctx.remote)
+				engine.iEvent.OnWSocketConnEvent(ctx.wsctx.sid, ctx.wsctx.remote)
 			case ENGINE_NET_WS_RECV:
-				engine.iDispatch.OnWSocketRecvEvent(ctx.wsctx.sid, ctx.wsctx.message)
+				engine.iEvent.OnWSocketRecvEvent(ctx.wsctx.sid, ctx.wsctx.message)
 			case ENGINE_NET_WS_CLOSE:
-				engine.iDispatch.OnWSocketCloseEvent(ctx.wsctx.sid)
+				engine.iEvent.OnWSocketCloseEvent(ctx.wsctx.sid)
 			case ENGINE_TIMER:
-				engine.iDispatch.OnTimerEvent(ctx.timerctx.id1, ctx.timerctx.id2, ctx.timerctx.id3, ctx.timerctx.id4, ctx.timerctx.id5, ctx.timerctx.para1, ctx.timerctx.para2)
+				engine.iEvent.OnTimerEvent(ctx.timerctx.id1, ctx.timerctx.id2, ctx.timerctx.id3, ctx.timerctx.id4, ctx.timerctx.id5, ctx.timerctx.para1, ctx.timerctx.para2)
 			}
 		case <-engine.stop:
 			break LOOP
