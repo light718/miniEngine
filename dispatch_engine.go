@@ -61,6 +61,8 @@ func New(wsaddr string, i IDispatchEngineEvent, cache int) (engine *DispatchEngi
 }
 
 func (engine *DispatchEngine) Start() {
+	engine.timerEngine.Start()
+	engine.wsEngine.Start()
 	go engine.Dispatch()
 }
 
@@ -113,6 +115,14 @@ func (engine *DispatchEngine) OnTimerEvent(id1, id2, id3, id4, id5 int, para1, p
 			para2: para2,
 		},
 	}
+}
+
+func (engine *DispatchEngine) TimerEngine() *TimerEngine {
+	return engine.timerEngine
+}
+
+func (engine *DispatchEngine) WebSocketEngine() *WebSocketEngine {
+	return engine.wsEngine
 }
 
 func (engine *DispatchEngine) Dispatch() {
