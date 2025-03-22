@@ -117,9 +117,6 @@ func (engine *WebSocketEngine) Dispatch() {
 			log.Panicf("WebSocketEngine Dispatch error:%v", err)
 		}
 	}()
-	if err := engine.httpsrv.ListenAndServe(); err != nil {
-		log.Fatal("Server error: ", err)
-	}
 LOOP:
 	for {
 		select {
@@ -146,6 +143,8 @@ LOOP:
 }
 
 func (engine *WebSocketEngine) Start() {
+	//启动http服务
+	go engine.httpsrv.ListenAndServe()
 	go engine.Dispatch()
 }
 
