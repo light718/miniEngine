@@ -50,15 +50,18 @@ type (
 	}
 )
 
-func NewAttemperhEngine(wsaddr string, i IAttemperhEngineEvent, asynCtxCount int) (engine *AttemperhEngine) {
+func NewAttemperhEngine(wsaddr string, chSize int) (engine *AttemperhEngine) {
 	engine = &AttemperhEngine{
-		iEvent: i,
-		ch:     make(chan AttemperhEngineContext, asynCtxCount),
-		stop:   make(chan struct{}),
+		ch:   make(chan AttemperhEngineContext, chSize),
+		stop: make(chan struct{}),
 	}
-	engine.wsEngine = NewWebSocketEngine(wsaddr, engine, asynCtxCount)
-	engine.timerEngine = NewTimerEngine(engine, asynCtxCount)
+	engine.wsEngine = NewWebSocketEngine(wsaddr, engine, chSize)
+	engine.timerEngine = NewTimerEngine(engine, chSize)
 	return
+}
+
+func (engine *AttemperhEngine) SetEvent(i IAttemperhEngineEvent) {
+	engine.iEvent = i
 }
 
 func (engine *AttemperhEngine) Start() {
