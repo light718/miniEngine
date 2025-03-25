@@ -14,6 +14,11 @@ const (
 	INVALID_SID int64 = 0
 )
 
+const (
+	DefaultSendBufferSize     = 16
+	DefaultRegisterBufferSize = 1024
+)
+
 type Message struct {
 	Sid     int64
 	Content []byte
@@ -30,7 +35,7 @@ type wsConnection struct {
 func NewWebSocketConnection() (c *wsConnection) {
 	c = &wsConnection{
 		sid:   INVALID_SID,
-		send:  make(chan []byte, 16),
+		send:  make(chan []byte, DefaultSendBufferSize),
 		close: make(chan *sync.Pool),
 	}
 
@@ -94,8 +99,8 @@ func NewWebSocketEngine(addr string, p *AttemperhEngine, cache int) (engine *Web
 		identity:        INVALID_SID,
 		clients:         make(map[int64]*wsConnection),
 		message:         make(chan Message, cache),
-		register:        make(chan *wsConnection, 1024),
-		unregister:      make(chan int64, 1024),
+		register:        make(chan *wsConnection, DefaultRegisterBufferSize),
+		unregister:      make(chan int64, DefaultRegisterBufferSize),
 		breakloop:       make(chan struct{}),
 		release:         make(chan struct{}),
 		upgrader: websocket.Upgrader{
@@ -114,7 +119,7 @@ func NewWebSocketEngine(addr string, p *AttemperhEngine, cache int) (engine *Web
 func (engine *WebSocketEngine) Dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Fatalf("WebSocketEngine Dispatch error:%v", err)
+			log.Printf("WebSocketEngine Dispatch error:%v", err)
 		}
 	}()
 LOOP:
@@ -152,6 +157,8 @@ func (engine *WebSocketEngine) start() {
 func (engine *WebSocketEngine) stop() {
 	engine.breakloop <- struct{}{}
 	<-engine.release
+	close(engine.breakloop)
+	close(engine.release)
 }
 
 // 连接处理

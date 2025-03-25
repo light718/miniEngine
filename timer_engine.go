@@ -141,6 +141,8 @@ func (engine *TimerEngine) start() {
 func (engine *TimerEngine) stop() {
 	engine.breakloop <- struct{}{}
 	<-engine.release
+	close(engine.breakloop)
+	close(engine.release)
 }
 
 func (engine *TimerEngine) Add(id1, id2, id3, id4, id5 int, expire time.Duration, para1, para2 interface{}) {
@@ -183,7 +185,7 @@ func (engine *TimerEngine) Fix(id1, id2, id3, id4, id5 int, expire time.Duration
 func (engine *TimerEngine) dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Fatalf("TimerEngine error:%v", err)
+			log.Printf("TimerEngine error:%v", err)
 		}
 	}()
 	timer := time.NewTimer(time.Millisecond)

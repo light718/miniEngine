@@ -72,6 +72,8 @@ func (engine *AttemperhEngine) Stop() {
 	engine.timerEngine.stop()
 	engine.stop <- struct{}{}
 	<-engine.release
+	close(engine.stop)
+	close(engine.release)
 }
 
 func (engine *AttemperhEngine) doWebSocketConn(sid int64, remote string) {
@@ -129,7 +131,7 @@ func (engine *AttemperhEngine) WebSocketEngine() *WebSocketEngine {
 func (engine *AttemperhEngine) dispatch() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Fatalf("DispatchEngine Dispatch error:%v", err)
+			log.Printf("DispatchEngine Dispatch error:%v", err)
 		}
 	}()
 LOOP:
